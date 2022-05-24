@@ -1,0 +1,23 @@
+# Ignore .exe files (build to .exe)
+*.exe
+
+# Ignore all module files
+*.mod
+
+# Ignore Matlab temporary files
+*.asv
+
+# Ignore emacs temporary files
+*~
+
+# Ignore standard fortran output files
+fort.*
+
+# Ignore object files
+*.o*
+
+# Ignore useless .dat files
+*.dat
+
+# Ignore library files and folders
+*.a
