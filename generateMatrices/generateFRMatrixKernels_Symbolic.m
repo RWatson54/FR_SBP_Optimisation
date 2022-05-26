@@ -1,122 +1,58 @@
-% -- This code generates matrix kernels for 2D doing FR on quads
-%    The modifications for changing to other shapes (and dimensions!) are hopefully not too difficult to see
+function [MOSO, MOSD, MOFO, MOFD, M1, M2, M3, M4, M5, M6, M7] = generateFRMatrixKernels_Symbolic(xOutr, xShap, xSoln, xFlux, nFluF, shapBasis, compBasis)
 
-% -- Clear everything and tidy up
-clear all
-close all
-fprintf('Tidied up workspace from previous state\n')
+% -- This code generates matrix kernels **symbolically** for 2D FR
 
-% -- Set up symbols for symbolic aspects of computation
-syms x real;
-Xsym = sym('x',[1 2], 'real');
+% -- The inputs are:
 
-fprintf('Symbols set for symbolic computations\n')
+%       xOutr -- the coordinates of the outside points, useful for normals and integration area (anticlockwise numbering, must be convex)
+%       xShap -- the coordinates of the points which will be used to geometrically fit the shape (so, might have 9 points for a P2 quad)
+%       xSoln -- the coordinates of the solution points within the shape
+%       xFlux -- the coordinates of the flux points, compatible with the order defined by nFluF
+%       nFluF -- the number of flux points on each face (e.g., [5 1 5 1]). Must be compatible with xFlux and xOutr
+%       shapBasis -- a symbolic column vector of the basis to be used for geometrically fitting the shape
+%       compBasis -- a symbolic column vector of the basis to be used for determining the solution
 
-% -- Set up the computational domain (a quad)
-compPoly = nsidedpoly(4,'Center',[0 0],'SideLength',2);
-xOutr = flipud(compPoly.Vertices); % Number the points anticlockwise rather than clockwise
+% -- And the outputs are:
+%       Lots of matrices for use as RBF kernels
+
+% -- Extract all the symbolic expressions from the symbolic bases
+Xsym = symvar([compBasis; shapBasis]);
+
+% -- Get the number of dimensions from the outer points
+nDim = size(xOutr,2);
+
+% -- Extract the computational normals from xOutr
+nFace = size(nFluF,2);
+for iFace = 1:nFace
+
+    % -- Work out which of the outer points bound this face
+    lP = mod(iFace  -1,nFace)+1;
+    rP = mod(iFace+1-1,nFace)+1;
+
+    % -- Get the direction of the normal vector
+    n(1) = (xOutr(rP,2) - xOutr(lP,2));
+    n(2) = (xOutr(lP,1) - xOutr(rP,1));
+
+    % -- And add in the normalised normals
+    xNorm(sum(nFluF(1:iFace-1))+1:sum(nFluF(1:iFace)),1) = n(1) / norm(n);
+    xNorm(sum(nFluF(1:iFace-1))+1:sum(nFluF(1:iFace)),2) = n(2) / norm(n);
+end
+fprintf('Computational normals successfully set\n')
+
+% -- Set up the computational domain, useful for plotting easily
+compPoly = polyshape(xOutr);
 fprintf('Computational domain set\n')
-
-% -- Set up the computational solution points
-xSoln = [   -0.906179845938664  -0.906179845938664
-            -0.906179845938664                   0
-            -0.906179845938664   0.538469310105683
-            -0.906179845938664   0.906179845938664
-            -0.906179845938664  -0.538469310105683
-            -0.538469310105683  -0.906179845938664
-            -0.538469310105683   0.906179845938664
-            -0.538469310105683  -0.538469310105683
-            -0.538469310105683                   0
-            -0.538469310105683   0.538469310105683
-                             0  -0.906179845938664
-                             0   0.906179845938663
-                             0  -0.538469310105683
-                             0   0.538469310105683
-                             0                   0
-             0.538469310105683  -0.538469310105683
-             0.538469310105683                   0
-             0.538469310105683   0.538469310105683
-             0.538469310105683   0.906179845938663
-             0.538469310105683  -0.906179845938664
-             0.906179845938663  -0.906179845938663
-             0.906179845938663                   0
-             0.906179845938663   0.906179845938663
-             0.906179845938663   0.538469310105683
-             0.906179845938664  -0.538469310105683];
-fprintf('Computational solution points set\n')
-
-% -- Set up the computational flux points
-xFlux = [    1.000000000000000  -0.906179845938664
-             1.000000000000000  -0.538469310105683
-             1.000000000000000                   0
-             1.000000000000000   0.538469310105683
-             1.000000000000000   0.906179845938664
-             0.906179845938664   1.000000000000000
-             0.538469310105683   1.000000000000000
-                             0   1.000000000000000
-            -0.538469310105683   1.000000000000000
-            -0.906179845938664   1.000000000000000
-            -1.000000000000000   0.906179845938664
-            -1.000000000000000   0.538469310105683
-            -1.000000000000000                   0
-            -1.000000000000000  -0.538469310105683
-            -1.000000000000000  -0.906179845938664
-            -0.906179845938664  -1.000000000000000
-            -0.538469310105683  -1.000000000000000
-                             0  -1.000000000000000
-             0.538469310105683  -1.000000000000000
-             0.906179845938664  -1.000000000000000];
-fprintf('Computational flux points set\n')
-
-% -- Set up the computational normals corresponding to the flux points
-xNorm = [                    1                   0
-                             1                   0
-                             1                   0
-                             1                   0
-                             1                   0
-                             0                   1
-                             0                   1
-                             0                   1
-                             0                   1
-                             0                   1
-                            -1                   0
-                            -1                   0
-                            -1                   0
-                            -1                   0
-                            -1                   0
-                             0                  -1
-                             0                  -1
-                             0                  -1
-                             0                  -1
-                             0                  -1];
-fprintf('Computational normals set\n')
-
-% -- Set the initial basis required. Can be any compatible basis, but for quads and
-%    square numbers of points, the maximal order basis is effective with
-%    polynomials here
-nSMaxOrder = round(sqrt(size(xSoln,1)));
-pow1D = [0:1:nSMaxOrder-1];
-xPow = reshape(repmat(pow1D',1,nSMaxOrder),[],1);
-yPow = reshape(repmat(pow1D ,nSMaxOrder,1),[],1);
-basisCompO = Xsym(1).^xPow .* Xsym(2).^yPow;
-
-nOMaxOrder = round(sqrt(size(xOutr,1)));
-pow1D = [0:1:nOMaxOrder-1];
-xPow = reshape(repmat(pow1D',1,nOMaxOrder),[],1);
-yPow = reshape(repmat(pow1D ,nOMaxOrder,1),[],1);
-basisOutrO = Xsym(1).^xPow .* Xsym(2).^yPow;
-fprintf('Initial basis functions set\n')
 
 % -- Integrate the "outer product" of the bases to form the Gramian matrix (can do this
 %    numerically, but easy here to do this symbolically). Interesting to
 %    note the use of the outer product to find the inner product of each!
-gramOutrO = int(int(basisOutrO * basisOutrO',Xsym(1),-1,1),Xsym(2),-1,1);
-gramCompO = int(int(basisCompO * basisCompO',Xsym(1),-1,1),Xsym(2),-1,1);
+gramShapO = polyInt(Xsym, shapBasis * shapBasis', xOutr);
+gramCompO = polyInt(Xsym, compBasis * compBasis', xOutr);
 fprintf('Gramian matrices calculated\n')
 
 % -- Now use the Cholesky decomposition of the Gramian as a quick MGS
-basisOutrN = inv(chol(gramOutrO))' * basisOutrO;
-basisCompN = inv(chol(gramCompO))' * basisCompO;
+basisShapN = inv(chol(gramShapO))' * shapBasis;
+basisCompN = inv(chol(gramCompO))' * compBasis;
 fprintf('Basis functions orthonormalised over domain\n')
 
 % -- Plot the domain and the flux and solution points, for a check
@@ -128,20 +64,20 @@ fprintf('Flux and solution point locations set\n')
 % -- Compute the computational basis Alternant matrices
 AlternantCSO = subs(basisCompN, {Xsym(1), Xsym(2)}, {xSoln(:,1)', xSoln(:,2)'});
 AlternantCFO = subs(basisCompN, {Xsym(1), Xsym(2)}, {xFlux(:,1)', xFlux(:,2)'});
-for iDim = 1:2
+for iDim = 1:nDim
     AlternantCSD{iDim} = subs(diff(basisCompN,Xsym(iDim)), {Xsym(1), Xsym(2)}, {xSoln(:,1)', xSoln(:,2)'});
 end
 fprintf('Alternant matrices formed on the computational basis\n')
 
 % -- Compute the outer basis Alternant matrices
-AlternantOOO = subs(basisOutrN, {Xsym(1), Xsym(2)}, {xOutr(:,1)', xOutr(:,2)'});
-AlternantOSO = subs(basisOutrN, {Xsym(1), Xsym(2)}, {xSoln(:,1)', xSoln(:,2)'});
-AlternantOFO = subs(basisOutrN, {Xsym(1), Xsym(2)}, {xFlux(:,1)', xFlux(:,2)'});
-for iDim = 1:2
-    AlternantOSD{iDim} = subs(diff(basisOutrN,Xsym(iDim)), {Xsym(1), Xsym(2)}, {xSoln(:,1)', xSoln(:,2)'});
+AlternantSOO = subs(basisShapN, {Xsym(1), Xsym(2)}, {xShap(:,1)', xShap(:,2)'});
+AlternantSSO = subs(basisShapN, {Xsym(1), Xsym(2)}, {xSoln(:,1)', xSoln(:,2)'});
+AlternantSFO = subs(basisShapN, {Xsym(1), Xsym(2)}, {xFlux(:,1)', xFlux(:,2)'});
+for iDim = 1:nDim
+    AlternantSSD{iDim} = subs(diff(basisShapN,Xsym(iDim)), {Xsym(1), Xsym(2)}, {xSoln(:,1)', xSoln(:,2)'});
 end
-for iDim = 1:2
-    AlternantOFD{iDim} = subs(diff(basisOutrN,Xsym(iDim)), {Xsym(1), Xsym(2)}, {xFlux(:,1)', xFlux(:,2)'});
+for iDim = 1:nDim
+    AlternantSFD{iDim} = subs(diff(basisShapN,Xsym(iDim)), {Xsym(1), Xsym(2)}, {xFlux(:,1)', xFlux(:,2)'});
 end
 fprintf('Alternant matrices formed on the outer basis\n')
 
@@ -149,23 +85,23 @@ fprintf('Alternant matrices formed on the outer basis\n')
 %    solution and flux points, normals, jacobians, determinants...
 
 % -- Solution point projection matrix (MOSO)
-MOSO = cleanZeros(double((AlternantOOO) \ (AlternantOSO))');
+MOSO = cleanZeros(double((AlternantSOO) \ (AlternantSSO))');
 fprintf('Solution point projection matrix found\n')
 
 % -- Flux point project matrix (MOFO)
-MOFO = cleanZeros(double((AlternantOOO) \ (AlternantOFO))');
+MOFO = cleanZeros(double((AlternantSOO) \ (AlternantSFO))');
 fprintf('Flux point projection matrix found\n')
 
 % -- Solution point metric projection matrix (MOSD)
-for iDim = 1:2
-    MOSDt{iDim} = cleanZeros(double((AlternantOOO) \ (AlternantOSD{iDim}))');
+for iDim = 1:nDim
+    MOSDt{iDim} = cleanZeros(double((AlternantSOO) \ (AlternantSSD{iDim}))');
 end
 MOSD = interleave(MOSDt{:},'row');
 fprintf('Gradient solution point projection matrix found\n')
 
 % -- Flux point projection matrix (MOFD)
-for iDim = 1:2
-    MOFDt{iDim} = cleanZeros(double((AlternantOOO) \ (AlternantOFD{iDim}))');
+for iDim = 1:nDim
+    MOFDt{iDim} = cleanZeros(double((AlternantSOO) \ (AlternantSFD{iDim}))');
 end
 MOFD = interleave(MOFDt{:},'row');
 fprintf('Gradient flux point projection matrix found\n')
@@ -177,22 +113,20 @@ M1 = cleanZeros(double(((AlternantCSO) \ (AlternantCFO))'));
 fprintf('Solution point to flux point primitive projection matrix found\n')
 
 % -- Set up the flux divergence matrix (M2)
-for iDim = 1:2
+for iDim = 1:nDim
     M2t{:,iDim} = cleanZeros(double((AlternantCSO) \ (AlternantCSD{iDim}))');
 end
 M2 = interleave(M2t{:}, 'col');
 fprintf('Solution point flux divergence matrix found\n')
 
 % -- Set up the flux point flux projection matrix (M3)
-for iDim = 1:2
+for iDim = 1:nDim
     M3t{iDim} = cleanZeros(M1 .* xNorm(:,iDim));
 end
 M3 = interleave(M3t{:}, 'col');
 fprintf('Solution point to flux point flux projection matrix found\n')
 
 % -- Set up the correction function matrix (M4) -- by far the most complicated!
-nFace = 4;
-nFluF = nSMaxOrder;
 syms t real
 
 % -- Express faces parametrically for line integration
@@ -203,25 +137,27 @@ for iFace = 1:nFace
     rP = mod(iFace+1-1,nFace)+1;
 
     % -- Put the face (line) in parametric form
-    tX(1) = t * (xOutr(rP,1) - xOutr(lP,1)) + xOutr(lP,1);
-    tX(2) = t * (xOutr(rP,2) - xOutr(lP,2)) + xOutr(lP,2);
+    tT(1) = t * (xOutr(rP,1) - xOutr(lP,1)) + xOutr(lP,1);
+    tT(2) = t * (xOutr(rP,2) - xOutr(lP,2)) + xOutr(lP,2);
 
     % -- Work out the dX/dt magnitude for line integral
     tJ = norm((xOutr(rP,:) - xOutr(lP,:)));
 
     % -- Find the parametric values corresponding to the flux points
-    for iFP = 1:nFluF
-        tFP(iFP) = solve(tX == xFlux((iFace-1)*nFluF+iFP,:));
+    tFP = zeros(1,nFluF(iFace));
+    for iFP = 1:nFluF(iFace)
+        tFP(iFP) = solve(tT == xFlux(sum(nFluF(1:iFace-1))+iFP,:));
     end
 
     % -- Find the polynomials (in t) which a 1 at the relevant flux point and zero at the others
-    for iFP = 1:nFluF
-        yFP = zeros(1,nFluF); yFP(iFP) = 1;
-        pF(iFP) = poly2sym(polyfit(double(tFP),yFP,nFluF-1),t);
+    pF = sym(zeros(1,nFluF(iFace)));
+    for iFP = 1:nFluF(iFace)
+        yFP = zeros(1,nFluF(iFace)); yFP(iFP) = 1;
+        pF(iFP) = poly2sym(polyfit(double(tFP),yFP,nFluF(iFace)-1),t);
     end
 
     % -- Integrate over the system
-    sTC(:,(iFace-1)*nFluF+1:iFace*nFluF) = int(subs(subs(basisCompN,Xsym(1),tX(1)),Xsym(2),tX(2))*pF,t,0,1)*tJ;
+    sTC(:,sum(nFluF(1:iFace-1))+1:sum(nFluF(1:iFace))) = int(subs(subs(basisCompN,Xsym(1),tT(1)),Xsym(2),tT(2))*pF,t,0,1)*tJ;
 end
 M4 = cleanZeros(double(AlternantCSO' * sTC));
 fprintf('Correction function matrix found\n')
@@ -231,14 +167,14 @@ M5 = interleave(M2t{:},'row');
 fprintf('Solution point primitive differentiation matrix found\n')
 
 % -- Set up the gradient projection matrix (M6)
-for iDim = 1:2
+for iDim = 1:nDim
     M6t{iDim} = M1;
 end
 M6t = blkdiag(M6t{:});
 % -- Build a pair of fairly complex permutation vectors
-for iDim = 1:2
-    prVt{iDim} = [1:size(xFlux,1)] + (iDim-1).*size(xFlux,1);
-    pcVt{iDim} = [1:size(xSoln,1)] + (iDim-1).*size(xSoln,1);
+for iDim = 1:nDim
+    prVt{iDim} = 1:size(xFlux,1) + (iDim-1)*size(xFlux,1);
+    pcVt{iDim} = 1:size(xSoln,1) + (iDim-1)*size(xSoln,1);
 end
 prV = interleave(prVt{:});
 pcV = interleave(pcVt{:});
@@ -247,20 +183,62 @@ M6 = cleanZeros(M6);
 fprintf('Solution point to flux point primitive gradient projection matrix found\n')
 
 % -- Set up the gradient correction matrix (M7)
-for iDim = 1:2
+for iDim = 1:nDim
     M7((iDim-1)*size(xSoln,1)+1:iDim*size(xSoln,1),:) = repmat(xNorm(:,iDim)',size(M4,1),1) .* M4;
 end
 % -- Build a permutation vector
-for iDim = 1:2
-    prVt{iDim} = [1:size(xSoln,1)] + (iDim-1).*size(xSoln,1);
+for iDim = 1:nDim
+    prVt{iDim} = 1:size(xSoln,1) + (iDim-1)*size(xSoln,1);
 end
 prV = interleave(prVt{:});
 M7 = M7(prV,:);
 M7 = cleanZeros(M7);
 fprintf('Primitive gradient correction matrix found\n')
 
+end
 
 % -- HELPER FUNCTIONS
+% -- polyInt: symbolically integrate over any polynomial
+function fI = polyInt(Xsym, f, xOutr)
+%POLYINT This function integrates f symbolically over a polygon defined by xOutr
+
+%     Xsym is a (row) vector of the symbols that appear in f
+%     f is a symbolic array of any size, in terms of the variables in Xsym
+%     xOutr is a set of points which define the domain of integration
+
+% -- Start by triangulating xOutr
+TR = delaunayTriangulation(xOutr);
+
+% -- Zero the response matix
+fI = sym(zeros(size(f,1), size(f,2)));
+
+% -- Loop over all the triangles in the list, accumulating the integrals
+for iT = 1:size(TR.ConnectivityList,1)
+    fI = fI + triInt(Xsym, f, TR.Points(TR.ConnectivityList(iT,:),:));
+end
+
+end
+% -- triInt: symbolically integrate over a triangle
+function fI = triInt(Xsym, f, xTri)
+%TRIINT This function integrates f symbolically over a triangle defined by xTri
+
+% -- Set up some symbols
+syms r s
+
+% -- Calculate the change of variables
+tX(1) = xTri(1,1) + (xTri(2,1) - xTri(1,1)) * r + (xTri(3,1) - xTri(1,1)) * s;
+tX(2) = xTri(1,2) + (xTri(2,2) - xTri(1,2)) * r + (xTri(3,2) - xTri(1,2)) * s;
+
+% -- Do substitution, replace x1 and x2 with s and t
+fS = subs(f, {Xsym(1), Xsym(2)}, {tX(1), tX(2)});
+
+% Get the determinant of the Jacobian of the transformation
+dJ = diff(tX(1),r) * diff(tX(2),s) - diff(tX(1),s) * diff(tX(2),r);
+
+% -- Integrate over the s and t triangle and rescale
+fI = int(int(fS, s, 0, 1-r), r, 0, 1) .* dJ;
+
+end
 % -- CleanZeros: tidy up very small numbers from matrices
 function M = cleanZeros(M)
 
