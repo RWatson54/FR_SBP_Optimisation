@@ -1,4 +1,5 @@
 % -- This is a driving script for generateFRMatrixKernels
+% -- Because it's numerical, it relies on the getBasisFunctions script in ../basisFunctions
 
 % -- Tidy up from a previous run
 close all
@@ -68,41 +69,9 @@ xFlux = [    1.000000000000000  -0.906179845938664
              0.538469310105683  -1.000000000000000
              0.906179845938664  -1.000000000000000];
 
-% -- Set up the vector of symbols we need
-Xsym = sym('x',[1 2], 'real');
-
-% -- Generate the basis for the shape positioning and scaling (here, maximal order polynomials)
-nOMaxOrder = round(sqrt(size(xOutr,1)));
-shapBasis = @(x,d) squarePower(x,d,nOMaxOrder);
-
-% -- Generate the basis for the computational behaviour (here, maximal order polynomials again)
-nSMaxOrder = round(sqrt(size(xSoln,1)));
-compBasis = @(x,d) squarePower(x,d,nSMaxOrder);
-
-% -- Clean up some of the junk
-clear nOMaxOrder nSMaxOrder
+% -- Set the basis type for the shape and computational basis
+shapBasisType = 'Maximal2D';
+compBasisType = 'Maximal2D';
 
 % -- Call the generating code
-[MOSO, MOSD, MOFO, MOFD, M1, M2, M3, M4, M5, M6, M7] = generateFRMatrixKernels_Numeric(xOutr, xShap, xSoln, xFlux, nFluF, shapBasis, compBasis);
-
-
-% -- Functions for generating the relevant function handles
-% ----------------------------------------------------------
-% ----------------------------------------------------------
-% -- Functions for maximal order basis functions
-function b = squarePower(x,d,n)
-
-    nOMaxOrder = n;
-    pow1D = 0:1:nOMaxOrder-1;
-    xPow = reshape(repmat(pow1D',1,nOMaxOrder),[],1);
-    yPow = reshape(repmat(pow1D ,nOMaxOrder,1),[],1);
-
-    if d == 0
-        b = (x(:,1)'.^(xPow) .* x(:,2)'.^(yPow));
-    elseif d == 1   
-        b = (max(0,xPow) .* x(:,1)'.^(max(0,xPow-1)) .* x(:,2)'.^(yPow));   
-    elseif d == 2
-        b = (x(:,1)'.^(xPow) .* max(0,yPow) .* x(:,2)'.^(max(0,yPow-1)));
-    end
-
-end
+[MOSO, MOSD, MOFO, MOFD, M1, M2, M3, M4, M5, M6, M7] = generateFRMatrixKernels_Numeric(xOutr, xShap, xSoln, xFlux, nFluF, shapBasisType, compBasisType);

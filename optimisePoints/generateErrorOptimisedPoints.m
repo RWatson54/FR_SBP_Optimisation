@@ -18,6 +18,12 @@ nGen = 100;                  % -- the GA optimisation maximum number of generati
 %    YOU MAY WELL FIND THAT SOME SYMMETRY ORBITS AND BASES ARE INCOMPATIBLE
 % =========================================================================
 
+% -- Add the path to the basis functions subroutine to keep it all in one place
+addpath('../basisFunctions/');
+
+% -- Add the path to the routines for finding quadratures on polygons to keep it all in one place
+addpath('../integrationWeights/');
+
 % -- Set up the polygon and the symmetry matrix
 [refPolygon, nSoln, nOutr, xOutr, symMatx] = getPolygonSymmetry(nSide, symOrb);
 fprintf('Symmetry generating functions calculated.\n')
