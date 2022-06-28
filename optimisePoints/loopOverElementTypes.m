@@ -89,20 +89,5 @@ end
 % -- Now, loop over each problem in turn
 for iR = 1:size(RunInput,2)
     [RunOutput(iR).xT, RunOutput(iR).E] = generateErrorOptimisedPoints(RunInput(iR).nSide, RunInput(iR).SymOrb, RunInput(iR).nFace, RunInput(iR).nTrial, RunInput(iR).compBasisType, RunInput(iR).testBasisType, RunInput(iR).wT, 2, 10000, 500);
+    save('TriangleRunOutput.dat',RunOutput);
 end
-
-
-% % -- Turn each of these into the required symmetry orbits
-% RunType(1).nSoln;
-% RunType(1).SymOrb;
-% RunType(1).nTrial;
-% RunType(1).nFace;
-% RunType(1).compBasisType.Type = 'Maximal2D';
-% RunType(1).compBasisType.Eps  = 'Dummy';
-% RunType(1).compBasisType.xC   = 'Dummy';
-% RunType(1).testBasisType.Type = 'Maximal2D';
-% RunType(1).testBasisType.Eps  = 'Dummy';
-% RunType(1).testBasisType.xC   = 'Dummy';
-% RunType(1).wT = ones(nTrial,1);
-
-% -- And run the code with these settings
