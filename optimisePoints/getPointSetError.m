@@ -1,4 +1,4 @@
-function [E] = getPointSetError(xEval, realBasis, testBasis, xIntg, wIntg, wT, p)
+function [E] = getPointSetError(xOutr, xFlux, xEval, realBasis, testBasis, xIntg, wIntg, xIntF, nFluF, Msq, Msq_d, Mfq, N, wT, p)
 
 %GETPOINTSETERROR Generates the L2 error norm of fitting a basis using a set of points
 
@@ -6,11 +6,14 @@ function [E] = getPointSetError(xEval, realBasis, testBasis, xIntg, wIntg, wT, p
 
 % -- The inputs are:
 
+%       xOutr -- the outer coordinates of the polygon [nOutr -x- nDim]
+%       xShap -- the shape defining coordinates of the polygon [nShap -x- nDim]
 %       xEval -- the location of the points [nSoln -x- nDim]
 %       realBasis -- a function handle which returns the evaluated basis to be used for the real fitting basis, as a function of x and d [= @(x,d) x(1) + x(2);]
 %       testBasis -- a function handle which returns the evaluated basis to be used for the test basis, as a function of x and d [= @(x,d) x(1) + x(2);]
-%       xIntg -- the coordinates of the integration points [nI -x- nDim]
-%       wIntg -- the weights of the integration points [nI -x- 1]
+%       xIntg -- the coordinates of the interior integration points [nII -x- nDim]
+%       wIntg -- the weights of the interior integration points [nII -x- 1]
+%       xIntF -- the coordinates of the face integration points [nIF -x- nDim]
 %       wT   -- a weighting function for each of the test bases, [nTest -x- 1].
 %       p -- the degree of the norm to be taken
 
@@ -26,13 +29,20 @@ if min(pdist(xEval)) < 1e-2
 end
 
 % -- Generate the key alternant matrices from the supplied functions
-AlternantSS = realBasis(xEval,0);
-AlternantSI = realBasis(xIntg,0);
-AlternantTI = testBasis(xIntg,0);
+AlternantSS = realBasis(xEval,0,xEval);
+AlternantSI = realBasis(xIntg,0,xEval);
+AlternantTI = testBasis(xIntg,0,xEval);
 
 % -- If the condition number of the solution alternant is too high, return a huge number
-if cond(AlternantSS) > 1e10
+if cond(AlternantSS) > 1e9
     E = 1e9;
+    return
+end
+
+% -- If the SBP Property is missing, return a huge number
+SBP = getSBP_External(xOutr, xEval, xFlux, xIntg, xIntF, nFluF, realBasis, Msq, Msq_d, Mfq, N);
+if SBP > 1e-6
+    E = 1e8;
     return
 end
 
@@ -40,7 +50,7 @@ end
 M1 = AlternantSS \ AlternantSI;
 
 % -- Evaluate the whole shebang of bases at the solution points
-approxSolution = testBasis(xEval,0) * M1;
+approxSolution = testBasis(xEval,0,xEval) * M1;
 
 % -- Get the output error value
 % So, (approxSolution-AlternantTI) is the bit inside the ()brackets in the paper (Eq. 19)

@@ -1,4 +1,4 @@
-function [SBPError, CSVError] = getSBP_Numeric(xOutr, xShap, xSoln, xFlux, nFluF, shapBasisType, compBasisType)
+function [SBPError, CSVError] = getSBP_Numeric(xOutr, xShap, xSoln, xFlux, nFluF, shapBasis, compBasis, Integrate)
 
 % -- This code tests the SBP property of the matrix kernels **numerically** for 2D FR
 
@@ -19,41 +19,41 @@ function [SBPError, CSVError] = getSBP_Numeric(xOutr, xShap, xSoln, xFlux, nFluF
 %       xSoln -- the coordinates of the solution points within the shape
 %       xFlux -- the coordinates of the flux points, compatible with the order defined by nFluF
 %       nFluF -- the number of flux points on each face (e.g., [5 1 5 1]). Must be compatible with xFlux and xOutr
-%       shapBasisType -- a string which sets the function handle to return the evaluated basis to be used for geometrically fitting the shape at coordinates, as a function of x and d [= @(x,d) x(1) + x(2);]
-%       compBasisType -- a string which sets the function handle to return the evaluated basis to be used for determining the solution computationally, as a function of x and d [= @(x,d) x(1) + x(2);]
+%       shapBasis -- a function handle to return the evaluated basis to be used for geometrically fitting the shape at coordinates, as a function of x and d [= @(x,d) x(1) + x(2);]
+%       compBasis -- a function handle to return the evaluated basis to be used for determining the solution computationally, as a function of x and d [= @(x,d) x(1) + x(2);]
 
 % -- And the outputs are:
 %       SBPError -- the Summation-by-Parts error of the scheme
 %       CSVError -- the conservation error of the scheme
-
-% -- The integration points
-nlInt = 200; % The number of line integration points per face
-nInt  = 100; % The order of the quadrature on each triangular subdomain
-
-% -- Add the path to the basis functions subroutine to keep it all in one place
-addpath('../basisFunctions/');
-
-% -- Add the path to the integration weights subroutines to keep them all in one place
-addpath('../integrationWeights/');
-
-% -- Set the function handles for the bases
-nOMaxOrder = size(xShap,1);
-shapBasis = getBasisFunctions(shapBasisType,nOMaxOrder);
-nSMaxOrder = size(xSoln,1);
-compBasis = getBasisFunctions(compBasisType,nSMaxOrder);
 
 % -- Get the number of dimensions from the outer points
 nDim = size(xOutr,2);
 
 % -- Set up the computational domain, useful for plotting easily
 compPoly = polyshape(xOutr);
-fprintf('Computational domain set\n')
+% fprintf('Computational domain set\n')
 
-% -- Integrate the "outer product" of the bases to form the Gramian matrix (can do this
-%    numerically, but easy here to do this symbolically). Interesting to
-%    note the use of the outer product to find the inner product of each!
-% -- For numeric integration, get the integration weights first
-[xIntegrate, wIntegrate] = getIntegrationPoints(compPoly,nInt);
+% -- The integration points
+nlInt = 200; % The number of line integration points per face
+if ~exist('Integrate','var') || isempty(Integrate)
+    % If the integration technique isn't specified, set it to zero
+    nInt = 100;
+    [xIntegrate, wIntegrate] = getIntegrationPoints(compPoly,nInt);
+else
+    if isa(Integrate, 'double')
+        % If the variable Integrate contains a number, then use this as the integration weight per triangle 
+        nInt = Integrate;
+        [xIntegrate, wIntegrate] = getIntegrationPoints(compPoly,nInt);
+    elseif (isa(Integrate, 'char') || isa(Integrate, 'string'))
+        % If the input is a string or character vector, then treat this as a filename stored in "../integrationWeights/explicit/<<filename>>"
+        dataIn = readmatrix(strjoin(["../integrationWeights/explicit/", Integrate],''));
+        nInt = size(dataIn,1); xIntegrate = dataIn(:,1:2); wIntegrate = dataIn(:,3);
+    else
+        % Otherwise, no idea what to do
+        error(' Unsure how to perform cubature over the element, terminating ')
+    end
+
+end
 
 % -- Extract the surface integration points and corresponding normals from xOutr
 nFace = size(nFluF,2);
@@ -75,51 +75,51 @@ for iFace = 1:nFace
     xFNrm((iFace-1)*nlInt+1:iFace*nlInt,2) = n(2) / norm(n);
 
 end
-fprintf('Integration points, weights, and normals successfully set\n')
+% fprintf('Integration points, weights, and normals successfully set\n')
 
 % -- And then compute the orthonormalised bases
-sBasisSet = shapBasis(xIntegrate,0);
+sBasisSet = shapBasis(xIntegrate,0,xShap);
 gramShapO = ((sBasisSet .* wIntegrate') * sBasisSet');
-cBasisSet = compBasis(xIntegrate,0);
+cBasisSet = compBasis(xIntegrate,0,xSoln);
 gramCompO = ((cBasisSet .* wIntegrate') * cBasisSet');
-fprintf('Gramian matrices calculated\n')
+% fprintf('Gramian matrices calculated\n')
 
 % -- By using the Cholesky decomposition of the Gramian as a quick MGS
-basisShapN = @(x,d) inv(chol(gramShapO))' * shapBasis(x,d);
-basisCompN = @(x,d) inv(chol(gramCompO))' * compBasis(x,d);
-fprintf('Basis functions orthonormalised over domain\n')
+basisShapN = @(x,d,xC) inv(chol(gramShapO))' * shapBasis(x,d,xC);
+basisCompN = @(x,d,xC) inv(chol(gramCompO))' * compBasis(x,d,xC);
+% fprintf('Basis functions orthonormalised over domain\n')
 
 % -- Plot the domain and the flux and solution points, for a check
 %plot(compPoly); hold on; plot(xSoln(:,1), xSoln(:,2),'x'), plot(xFlux(:,1), xFlux(:,2), 'o')
-fprintf('Flux and solution point locations set\n')
+% fprintf('Flux and solution point locations set\n')
 
 % -- Start doing the work by building some Alternants
-AlternantCSO = basisCompN(xSoln,0);
-AlternantCQO = basisCompN(xIntegrate,0);
-AlternantCFO = basisCompN(xFlux,0);
-AlternantCLO = basisCompN(xFInt,0);
+AlternantCSO = basisCompN(xSoln,0,xSoln);
+AlternantCQO = basisCompN(xIntegrate,0,xSoln);
+AlternantCFO = basisCompN(xFlux,0,xSoln);
+AlternantCLO = basisCompN(xFInt,0,xSoln);
 for iDim = 1:nDim
-    AlternantCSD{iDim} = basisCompN(xSoln,iDim);
+    AlternantCSD{iDim} = basisCompN(xSoln,iDim,xSoln);
 end
-fprintf('Alternant matrices formed on the computational basis\n')
+% fprintf('Alternant matrices formed on the computational basis\n')
 
 % -- Get the mass matrix for the quadrature at the solution points
 % -- diag(Msq) .* M === diag(wIntegrate) * M, so could leave as a vector
 Msq = diag(wIntegrate);
-fprintf('Quadrature mass matrix formed\n')
+% fprintf('Quadrature mass matrix formed\n')
 
 % -- Set up the "augmented mass matrix", for use with the gradients
 % -- diag(Msq_d) .* M === kron(eye(2), diag(wIntegrate)) * M, so could leave as a vector
 Msq_d = kron(eye(2), diag(wIntegrate));
-fprintf('Augmented quadrature mass matrix formed\n')
+% fprintf('Augmented quadrature mass matrix formed\n')
 
 % -- Get the solution-to-quadrature projection matrix
 Lsq = (AlternantCSO \ AlternantCQO)';
-fprintf('Solution-to-quadrature projection matrix formed\n')
+% fprintf('Solution-to-quadrature projection matrix formed\n')
 
 % -- Set up the "augmented solution-to-quadrature projection matrix
 Lsq_d = kron(eye(nDim), Lsq);
-fprintf('Augmented Solution-to-quadrature projection matrix formed\n')
+% fprintf('Augmented Solution-to-quadrature projection matrix formed\n')
 
 % -- Build the differentiation matrices
 for iDim = 1:nDim
@@ -130,11 +130,11 @@ M5 = cell2mat(M2t');
 
 % -- Matrix D is equivalent to the divergence operator, M2
 D = M2;
-fprintf('Solution point flux divergence matrix found\n')
+% fprintf('Solution point flux divergence matrix found\n')
 
 % -- Matrix G is equivalent to the differentiation operator, M5
 G = M5;
-fprintf('Solution point primitive differentiation matrix found\n')
+% fprintf('Solution point primitive differentiation matrix found\n')
 
 % -- Assemble the LHS of the SBP property
 SBP_lhs = (Lsq'*Msq*Lsq*D) + (G'*Lsq_d'*Msq_d*Lsq_d);
@@ -142,16 +142,16 @@ SBP_lhs = (Lsq'*Msq*Lsq*D) + (G'*Lsq_d'*Msq_d*Lsq_d);
 % -- Matrix LSF is equivalent to the solution to flux point projection operation, M1
 M1 = cleanZeros(double(((AlternantCSO) \ (AlternantCFO))'));
 Lsf = M1;
-fprintf('Solution point to flux point primitive projection matrix found\n')
+% fprintf('Solution point to flux point primitive projection matrix found\n')
 
 % -- Set up the "augmented" solution-to-flux projection matrix
 Lsf_d = kron(eye(nDim), Lsf);
-fprintf('Augmented solution point to flux point projection matrix formed\n')
+% fprintf('Augmented solution point to flux point projection matrix formed\n')
 
 % -- Get the boundary mass matrix for the quadrature at the flux points
 % -- diag(Mfq) .* M === diag(wFInt) * M, so could leave as a vector
 Mfq = diag(wFInt);
-fprintf('Boundary quadrature mass matrix formed\n')
+% fprintf('Boundary quadrature mass matrix formed\n')
 
 % -- Matrix LFR isn't equivalent to any normal FR matrix!
 for iFace = 1:nFace
@@ -164,25 +164,25 @@ for iFace = 1:nFace
 
 end
 %Lfr = cleanZeros(double(((AlternantCFO) \ (AlternantCLO))'));
-fprintf('Flux point to boundary quadrature point projection matrix found\n')
+% fprintf('Flux point to boundary quadrature point projection matrix found\n')
 
 % -- Set up the "augmented" flux to boundary quadrature point projection matrix
 Lfr_d = kron(eye(nDim), Lfr);
-fprintf('Augmented flux to boundary quadrature point projection matrix formed\n')
+% fprintf('Augmented flux to boundary quadrature point projection matrix formed\n')
 
 % -- Put the normals into the preferred form for matrix multiplication
 N = zeros(size(xFNrm,1), nDim*size(xFNrm,1));
 for iDim = 1:nDim
     N(:,(iDim-1)*size(xFNrm,1)+1:iDim*size(xFNrm,1)) = diag(xFNrm(:,iDim));
 end
-fprintf('Matrix of normals formed\n')
+% fprintf('Matrix of normals formed\n')
 
 % -- Assemble the right hand side
 SBP_rhs = Lsf'*Lfr'*Mfq*N*Lfr_d*Lsf_d;
 
 % -- And determine the SBP Property
 SBPError = norm(SBP_lhs - SBP_rhs);
-fprintf('SBP Property determined\n')
+% fprintf('SBP Property determined\n')
 
 % ------------------------------------------------------------------------- %
 % ----------------------- SBP PROPERTY DETERMINED ------------------------- %
@@ -199,10 +199,10 @@ for iFace = 1:nFace
     [x1DInt, w1DInt] = lgwt(nlInt, xOutr(lP,:), xOutr(rP,:));
 
     % -- Use the MP pseudoinverse to solve the "overconstrained" system for each face
-    lT = pinv(basisCompN(xFlux(sum(nFluF(1:iFace-1))+1:sum(nFluF(1:iFace)),:),0))*basisCompN(x1DInt,0);
+    lT = pinv(basisCompN(xFlux(sum(nFluF(1:iFace-1))+1:sum(nFluF(1:iFace)),:),0,xSoln))*basisCompN(x1DInt,0,xSoln);
 
     % -- Also evaluate the orthonormal bases themselves along the line
-    oT = basisCompN(x1DInt,0);
+    oT = basisCompN(x1DInt,0,xSoln);
 
     % -- Numerically integrate along the line to give the coefficients
     sTC(:,sum(nFluF(1:iFace-1))+1:sum(nFluF(1:iFace))) = ((oT .* w1DInt') * lT');
@@ -210,7 +210,7 @@ for iFace = 1:nFace
 end
 M4 = cleanZeros(double(AlternantCSO' * sTC));
 C = M4;
-fprintf('Correction function matrix found\n')
+% fprintf('Correction function matrix found\n')
 
 % -- Assemble the left hand side
 CSV_lhs = ones(size(xSoln,1),1)'*Lsq'*Msq*Lsq*C;

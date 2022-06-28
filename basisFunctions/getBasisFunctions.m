@@ -1,4 +1,4 @@
-function [basis] = getBasisFunctions(basisType, nBasis, compPoly)
+function [basis] = getBasisFunctions(basisIn, nBasis, compPoly)
 
 %GETBASISFUNCTIONS generates a function handle which evaluates the requested nBasis bases as a column vector at each of the input coordinates
 
@@ -6,7 +6,7 @@ function [basis] = getBasisFunctions(basisType, nBasis, compPoly)
 
 % -- The inputs are:
 
-%       basisType -- The type of the basis that is being requested
+%       basisIn -- The type of the basis that is being requested
 %       nBasis -- how many bases of this type are being asked for
 %       compPoly (optional) -- the polygon that we're using here, for the orthonormalisation
 
@@ -16,74 +16,63 @@ function [basis] = getBasisFunctions(basisType, nBasis, compPoly)
 
 % -------------------------------------------------------------
 
-% -- Test to see if the basis number requested is reasonable
-switch basisType
+% -- Work through the bases
+switch basisIn.Type
 
     case 'Maximal2D'
 
         % -- For the 2D maximal order basis, the requested number of bases should be a square number
         isSquare = mod(sqrt(nBasis),1)==0;
         if ~isSquare
-
             error('Incompatible number of bases requested for a Maximal2D basis')
-
         end
+
+        % -- Assuming it's reasonable, return the basis, the 2D Maximal Order basis polynomial
+        basisO = @(x,d,xC) maximalOrder2D(x,d,nBasis);
 
     case 'Total2D'
 
         % -- For the 2D total order basis, the requested number of bases should be a triangular number
         isTriangular = mod(sqrt(8*nBasis+1),1)==0;
         if ~isTriangular
-
             error('Incompatible number of bases requested for a Total2D basis')
-
         end
+
+        % -- Assuming it's reasonable, return the basis, the 2D Total Order basis polynomial
+        basisO = @(x,d,xC) totalOrder2D(x,d,nBasis);
 
     case 'Euclid2D'
 
         % -- For the Euclidean basis, there's no easy closed form for the test, so list the numbers (OEIS A000603)
         isTriangular = ismember(nBasis,[1 3 6 11 17 26 35 45 58 73 90 106 123 146 168 193 216 243]);
         if ~isTriangular
-
             error('Incompatible number of bases requested for a Total2D basis')
-
         end
+
+        % -- Assuming it's reasonable, return the basis, the 2D Total Order basis polynomial
+        basisO = @(x,d,xC) euclidOrder2D(x,d,nBasis);
+
+    case 'GaussianGA'
+
+        % -- No mucking around with RBFs - the data is fine no matter the number of points
+
+        % -- Return the basis, the Gaussian RBF-GA Method RBF
+        basisO = @(x,d,xC) gaussianGA(x,d,basisIn.Eps,xC); 
+
     otherwise
 
         error('No corresponding trial basis functions set in that size. Goodbye.\n')
 
 end
 
-% -- Set up the bases for the requested type
-switch basisType
-
-    case 'Maximal2D'
-
-        % -- Set the 2D Maximal Order basis polynomial function handle
-        basisO = @(x,d) maximalOrder2D(x,d,nBasis);
-
-    case 'Total2D'
-
-        % -- Set the 2D Total Order basis polynomial function handle
-        basisO = @(x,d) totalOrder2D(x,d,nBasis);
-
-    case 'Euclid2D'
-
-        % -- Set the 2D Euclidean Order basis polynomial function handle
-        basisO = @(x,d) euclidOrder2D(x,d,nBasis);
-            
-    otherwise
-
-        error('No corresponding trial basis functions set. Goodbye.\n')
-
-end
-
 % -- Test to see if the polygon shape has been passed in for orthonormalisation
 if exist('compPoly','var')
+    % -- Add in the location for the integration
+    addpath('../integrationWeights/');
     % -- Generate the integration weights
-    [xInt, wInt] = getIntegrationPoints(compPoly, 20);
+    [xInt, wInt] = getIntegrationPoints(compPoly, 40);
     % -- Integrate the basis over the domain to get the Gramian
-    Gm = (basisO(xInt,0) .* wInt') * basisO(xInt,0)';
+    Gm = (basisO(xInt,0,basisIn.xC) .* wInt') * basisO(xInt,0,basisIn.xC)';
     % -- And calculate the matrix for orthonormalisation with the inverse of the Cholesky
     oMat = inv(chol(Gm))';
 else
@@ -92,7 +81,7 @@ else
 end
 
 % -- Othonormalise the bases if required
-basis = @(x,d) oMat * basisO(x,d);
+basis = @(x,d,xC) oMat * basisO(x,d,xC);
 
 end
 
@@ -103,6 +92,26 @@ end
 % ---------------------------------------------
 
 % Feel free to add your own basis functions in here in the style of maximalOrder2D!
+
+function [b] = gaussianGA(x,d,eps,xC)
+
+    % -------------------------------------------------------------
+
+    % -- The inputs are:
+
+    %       x -- the coordinates to evaluate the basis at [nCoord -x- nDim]
+    %       d -- the direction in which to differentiate, if any
+    %       eps -- the number of bases to compute
+
+    % -- The outputs are:
+
+    %       b -- the basis evaluated at the coordinate points
+
+    % -------------------------------------------------------------
+
+    b = rbfga_weights_Coder_mex(eps,xC,x,d);
+
+end
 
 % -- Function for two dimensional maximal order basis
 function [b] = maximalOrder2D(x,d,n)

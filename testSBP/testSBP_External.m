@@ -6,7 +6,7 @@ close all
 clear all
 
 % -- Set the number of points
-nOutr = 6; nFace = 5;
+nOutr = 4; nFace = 5;
 
 % -- Add the path to the basis functions subroutine to keep it all in one place
 addpath('../basisFunctions/');
@@ -22,7 +22,8 @@ xOutr = flipud(compPoly.Vertices);
 xShap = xOutr;
 
 % -- Set the solution point coordinates required, could put in directly, could Blue Peter read from text file
-xSoln = readmatrix('../optimisePoints/pointSets/solnSet_d2_p6_n37_001.txt');
+xSoln = readmatrix('../optimisePoints/pointSets/solnSet_d2_p4_n25_001.txt');
+xSoln = xSoln + 2*0.00001*(randn(size(xSoln,1), size(xSoln,2)) - 0.5);
 
 % -- Set up the distribution of points around the element
 nFluF = repmat(nFace, 1, nOutr);
@@ -49,16 +50,11 @@ for iF = 1:size(fluxOrbit,2)
 end
 
 % -- Set the basis type for the shape and computational basis
-shapBasisType.Type = 'GaussianGA';
-shapBasisType.xC = xShap;
-shapBasisType.Eps = 1e-10;
-
 compBasisType.Type = 'GaussianGA';
 compBasisType.xC = xSoln;
 compBasisType.Eps = 1e-10;
 
 % -- Set the function handles for the bases
-shapBasis = getBasisFunctions(shapBasisType,size(xShap,1));
 compBasis = getBasisFunctions(compBasisType,size(xSoln,1));
 
 % -- Call the generating code, looping over various quadrature schemes a la Trojak
@@ -66,9 +62,9 @@ compBasis = getBasisFunctions(compBasisType,size(xSoln,1));
 quadraturesList = dir('../integrationWeights/explicit/poly_m6*.txt');
 quadFilenames = string({quadraturesList.name});
 
-%[S1, C1] = getSBP_Numeric(xOutr, xShap, xSoln, xFlux, nFluF, shapBasisType, compBasisType, 70);
+% -- Sort things out
+[xIntI, wIntI] = getIntegrationPoints(compPoly, 80);
+[xIntF, wIntF, nIntF] = getFaceIntegration(xOutr, 200);
+[Msq, Msq_d, Mfq, N] = getSBP_Invariant(wIntI, wIntF, nIntF);
 
-for iQ = 1:size(quadFilenames,2)
-    rQ = size(quadFilenames,2) - iQ + 1;
-    [SI(rQ), C1(rQ)] = getSBP_Numeric(xOutr, xShap, xSoln, xFlux, nFluF, shapBasis, compBasis, quadFilenames(rQ));
-end
+SBP = getSBP_External(xOutr, xSoln, xFlux, xIntI, xIntF, nFluF, compBasis, Msq, Msq_d, Mfq, N)

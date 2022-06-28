@@ -1,18 +1,4 @@
-% -- Set up some variables which define the optimisation
-
-% =================================================================
-%    IT'S MOSTLY UP TO YOU TO MAKE SURE THESE THINGS ARE COMPATIBLE
-% =================================================================
-
-nSide = 4;                   % -- the number of vertices of your polygon
-symOrb = [1 4 1];            % -- the number of points in each of the three symmetry orbits
-nTrial = 100;                % -- the number of trial bases to use
-realBasisType = 'Maximal2D'; % -- the basis to be used over the solution points
-testBasisType = 'Maximal2D'; % -- the test basis to which ours is compared
-wT = ones(nTrial,1);         % -- the weighting of the terms in the test basis
-p = 2;                       % -- the p-norm magnitude
-nPop = 5000;                 % -- the GA optimisation population size
-nGen = 100;                  % -- the GA optimisation maximum number of generations
+function [xOut, fVal] = generateErrorOptimisedPoints(nSide, symOrb, nFace, nTrial, compBasisType, testBasisType, wT, p, nPop, nGen)
 
 % =========================================================================
 %    YOU MAY WELL FIND THAT SOME SYMMETRY ORBITS AND BASES ARE INCOMPATIBLE
@@ -24,41 +10,55 @@ addpath('../basisFunctions/');
 % -- Add the path to the routines for finding quadratures on polygons to keep it all in one place
 addpath('../integrationWeights/');
 
+% -- Add the path to the SBP tester to keep things in one place
+addpath('../testSBP/');
+
 % -- Set up the polygon and the symmetry matrix
-[refPolygon, nSoln, nOutr, xOutr, symMatx] = getPolygonSymmetry(nSide, symOrb);
+[refPolygon, nSoln, nOutr, xOutr, xFlux, nFluF, symMatx] = getPolygonSymmetry(nSide, symOrb, nFace);
 fprintf('Symmetry generating functions calculated.\n')
 
-% -- Set up the integration points and weights over the polygon
-[xIntg, wIntg] = getIntegrationPoints(refPolygon, 20);
-fprintf('Integration points and weights over polygon found.\n')
+% -- Set up the integration points and weights over the polygon interior
+[xIntI, wIntI] = getIntegrationPoints(refPolygon, 40);
+fprintf('Integration points and weights over polygon interior found.\n')
+
+% -- Set up the integration points and weights over the polygon faces
+[xIntF, wIntF, nIntF] = getFaceIntegration(xOutr, 50);
+fprintf('Integration points and weights over polygon faces found.\n')
+
+% -- Set up the various invariant matrices needed by the SBP test
+[Msq, Msq_d, Mfq, N] = getSBP_Invariant(wIntI, wIntF, nIntF);
 
 % -- Set up the actual and trial basis functions over the polynomial, and orthonormalise
-realBasisN = getBasisFunctions(realBasisType, nSoln,  refPolygon);
+compBasisN = getBasisFunctions(compBasisType, nSoln);
 testBasisN = getBasisFunctions(testBasisType, nTrial, refPolygon);
-fprintf('Basis functions set and orthonormalised.\n')
+fprintf('Basis functions set and test function orthonormalised.\n')
 
 % -- Set up the bounds of the optimisation
 [lb, ub] = getOptimisationBounds(symOrb);
 fprintf('Bounds of optimisation set up.\n')
 
 % -- Set up the function(s) to be optimised
-getError = @(oVec) getPointSetError(getPointSetFromVector(symMatx, symOrb, oVec), realBasisN, testBasisN, xIntg, wIntg, wT, p);
+getError = @(oVec) getPointSetError(xOutr, xFlux, getPointSetFromVector(symMatx, symOrb, oVec), compBasisN, testBasisN, xIntI, wIntI, xIntF, nFluF, Msq, Msq_d, Mfq, N, wT, p);
 fprintf('Optimisation error function set.\n')
 
 % -- Set up the optimisation settings (genetic algorithm)
 options = optimoptions('ga','Display','iter', ...
-                            'MaxStallGenerations',floor(nGen/3), ...
+                            'MaxStallGenerations',min(floor(nGen/5), 50), ...
                             'MaxGenerations',nGen, ...
                             'CrossoverFcn',{@crossoverintermediate}, ...
                             'OutputFcn',{@(options,state,flag) gaoutfun(options, state, flag, nOutr, symOrb, symMatx)}, ...
                             'PopulationSize',nPop, ...
-                            'PlotFcn',{@gaplotbestf, ...
-                                       @gaplotscorediversity}, ...
                             'UseParallel',true);
+                            %'PlotFcn',{@gaplotbestf, ...
+                            %           @gaplotscorediversity}, );
 fprintf('Optimisation settings defined.\n')
 
 % -- Perform the optimisation (genetic algorithm)
 [sVecOpt, fVal] = ga(getError, length(lb), [], [], [], [], lb, ub, [], options);
+
+xOut = getPointSetFromVector(symMatx, symOrb, sVecOpt);
+
+end
 
 % ----------------------------------------------------
 % OPTIMISATION VISUALISATION AND OUTPUT FUNCTIONS
@@ -72,7 +72,7 @@ switch flag
     case 'iter'
 
         % -- Update the history every 50 generations.
-        if rem(state.Generation,50) == 0
+        if rem(state.Generation,25) == 0
 
             % -- Find the best objective function, and stop if it is low.
             ibest = state.Best(end);

@@ -63,15 +63,15 @@ fprintf('Computational domain set\n')
 [xIntegrate, wIntegrate] = getIntegrationPoints(compPoly,nInt);
 
 % -- And then compute the orthonormalised bases
-sBasisSet = shapBasis(xIntegrate,0);
+sBasisSet = shapBasis(xIntegrate,0,xSoln);
 gramShapO = ((sBasisSet .* wIntegrate') * sBasisSet');
-cBasisSet = compBasis(xIntegrate,0);
+cBasisSet = compBasis(xIntegrate,0,xSoln);
 gramCompO = ((cBasisSet .* wIntegrate') * cBasisSet');
 fprintf('Gramian matrices calculated\n')
 
 % -- Now use the Cholesky decomposition of the Gramian as a quick MGS
-basisShapN = @(x,d) inv(chol(gramShapO))' * shapBasis(x,d);
-basisCompN = @(x,d) inv(chol(gramCompO))' * compBasis(x,d);
+basisShapN = @(x,d,xC) inv(chol(gramShapO))' * shapBasis(x,d,xC);
+basisCompN = @(x,d,xC) inv(chol(gramCompO))' * compBasis(x,d,xC);
 fprintf('Basis functions orthonormalised over domain\n')
 
 % -- Plot the domain and the flux and solution points, for a check
@@ -81,22 +81,22 @@ fprintf('Flux and solution point locations set\n')
 % -- Start building the matrices
 
 % -- Compute the computational basis Alternant matrices
-AlternantCSO = basisCompN(xSoln,0);
-AlternantCFO = basisCompN(xFlux,0);
+AlternantCSO = basisCompN(xSoln,0,xSoln);
+AlternantCFO = basisCompN(xFlux,0,xSoln);
 for iDim = 1:nDim
-    AlternantCSD{iDim} = basisCompN(xSoln,iDim);
+    AlternantCSD{iDim} = basisCompN(xSoln,iDim,xSoln);
 end
 fprintf('Alternant matrices formed on the computational basis\n')
 
 % -- Compute the outer basis Alternant matrices
-AlternantSOO = basisShapN(xShap,0);
-AlternantSSO = basisShapN(xSoln,0);
-AlternantSFO = basisShapN(xFlux,0);
+AlternantSOO = basisShapN(xShap,0,xSoln);
+AlternantSSO = basisShapN(xSoln,0,xSoln);
+AlternantSFO = basisShapN(xFlux,0,xSoln);
 for iDim = 1:nDim
-    AlternantSSD{iDim} = basisShapN(xSoln,iDim);
+    AlternantSSD{iDim} = basisShapN(xSoln,iDim,xSoln);
 end
 for iDim = 1:nDim
-    AlternantSFD{iDim} = basisShapN(xFlux,iDim);
+    AlternantSFD{iDim} = basisShapN(xFlux,iDim,xSoln);
 end
 fprintf('Alternant matrices formed on the outer basis\n')
 
@@ -156,10 +156,10 @@ for iFace = 1:nFace
     [x1DInt, w1DInt] = lgwt(nlInt, xOutr(lP,:), xOutr(rP,:));
 
     % -- Use the MP pseudoinverse to solve the "overconstrained" system for each face
-    lT = pinv(basisCompN(xFlux(sum(nFluF(1:iFace-1))+1:sum(nFluF(1:iFace)),:),0))*basisCompN(x1DInt,0);
+    lT = pinv(basisCompN(xFlux(sum(nFluF(1:iFace-1))+1:sum(nFluF(1:iFace)),:),0,xSoln))*basisCompN(x1DInt,0,xSoln);
 
     % -- Also evaluate the orthonormal bases themselves along the line
-    oT = basisCompN(x1DInt,0);
+    oT = basisCompN(x1DInt,0,xSoln);
 
     % -- Numerically integrate along the line to give the coefficients
     sTC(:,sum(nFluF(1:iFace-1))+1:sum(nFluF(1:iFace))) = ((oT .* w1DInt') * lT');

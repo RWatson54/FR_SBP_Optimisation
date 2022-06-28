@@ -70,8 +70,13 @@ xFlux = [    1.000000000000000  -0.906179845938664
              0.906179845938664  -1.000000000000000];
 
 % -- Set the basis type for the shape and computational basis
-shapBasisType = 'Maximal2D';
-compBasisType = 'Maximal2D';
+shapBasisType.Type = 'GaussianGA';
+shapBasisType.xC = xShap;
+shapBasisType.Eps = 1e-10;
+
+compBasisType.Type = 'GaussianGA';
+compBasisType.xC = xSoln;
+compBasisType.Eps = 1e-10;
 
 % -- Call the generating code
 [MOSO, MOSD, MOFO, MOFD, M1, M2, M3, M4, M5, M6, M7] = generateFRMatrixKernels_Numeric(xOutr, xShap, xSoln, xFlux, nFluF, shapBasisType, compBasisType);
